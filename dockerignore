@@ -1,8 +1,0 @@
-.git
-.gitignore
-.env
-node_modules
-*.log
-*.md
-.idea
-.vscode
