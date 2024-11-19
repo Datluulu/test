@@ -1,4 +1,2 @@
-FROM nginx:1.23.0
-
-
+FROM nginx
 COPY . /usr/share/nginx/html/
