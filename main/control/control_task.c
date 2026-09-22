@@ -13,16 +13,26 @@
 
 static const char *TAG = "CONTROL";
 
+
 static QueueHandle_t s_queue = NULL;
 
+
+/* =========================
+ * CONTROL COMMAND
+ * ========================= */
 
 typedef enum
 {
     CONTROL_CMD_START = 0,
+
     CONTROL_CMD_STOP
 
 } control_command_t;
 
+
+/* =========================
+ * CONTROL TASK
+ * ========================= */
 
 static void control_task(
     void *arg)
@@ -32,6 +42,10 @@ static void control_task(
 
     while (true)
     {
+        /*
+         * Chờ command
+         */
+
         if (xQueueReceive(
                 s_queue,
                 &command,
@@ -44,6 +58,10 @@ static void control_task(
 
         switch (command)
         {
+            /* =====================
+             * START
+             * ===================== */
+
             case CONTROL_CMD_START:
 
                 ESP_LOGI(
@@ -51,7 +69,11 @@ static void control_task(
                     "START"
                 );
 
-                app_state_set_running(true);
+
+                app_state_set_running(
+                    true
+                );
+
 
                 mqtt_publish_status(
                     "started"
@@ -60,6 +82,10 @@ static void control_task(
                 break;
 
 
+            /* =====================
+             * STOP
+             * ===================== */
+
             case CONTROL_CMD_STOP:
 
                 ESP_LOGI(
@@ -67,7 +93,11 @@ static void control_task(
                     "STOP"
                 );
 
-                app_state_set_running(false);
+
+                app_state_set_running(
+                    false
+                );
+
 
                 mqtt_publish_status(
                     "stopped"
@@ -77,31 +107,44 @@ static void control_task(
 
 
             default:
+
                 break;
         }
     }
 }
 
 
+/* =========================
+ * MQTT CALLBACK
+ * ========================= */
+
 static void mqtt_command_callback(
     mqtt_command_t command)
 {
-    control_command_t control_command;
+    control_command_t
+        control_command;
 
 
     switch (command)
     {
         case MQTT_COMMAND_START:
+
             control_command =
                 CONTROL_CMD_START;
+
             break;
+
 
         case MQTT_COMMAND_STOP:
+
             control_command =
                 CONTROL_CMD_STOP;
+
             break;
 
+
         default:
+
             return;
     }
 
@@ -117,8 +160,16 @@ static void mqtt_command_callback(
 }
 
 
+/* =========================
+ * INIT
+ * ========================= */
+
 esp_err_t control_task_init(void)
 {
+    /*
+     * Create queue
+     */
+
     s_queue = xQueueCreate(
         COMMAND_QUEUE_LENGTH,
         sizeof(control_command_t)
@@ -126,27 +177,40 @@ esp_err_t control_task_init(void)
 
 
     if (s_queue == NULL)
+    {
         return ESP_ERR_NO_MEM;
+    }
 
+
+    /*
+     * Register MQTT callback
+     */
 
     mqtt_manager_set_command_callback(
         mqtt_command_callback
     );
 
 
-    BaseType_t ret = xTaskCreate(
-        control_task,
-        "control",
-        CONTROL_TASK_STACK,
-        NULL,
-        CONTROL_TASK_PRIORITY,
-        NULL
-    );
+    /*
+     * Create task
+     */
+
+    BaseType_t ret =
+        xTaskCreate(
+            control_task,
+            "control",
+            CONTROL_TASK_STACK,
+            NULL,
+            CONTROL_TASK_PRIORITY,
+            NULL
+        );
 
 
-    return (
-        ret == pdPASS
-        ? ESP_OK
-        : ESP_FAIL
-    );
+    if (ret != pdPASS)
+    {
+        return ESP_FAIL;
+    }
+
+
+    return ESP_OK;
 }

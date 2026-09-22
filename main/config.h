@@ -43,14 +43,14 @@
 
 #define MMA845X_I2C_ADDR    0x1C
 
-#define MMA845X_PERIOD_MS  100
+#define MMA845X_PERIOD_MS  1000
 
 
 /* =========================
  * VL53L0X
  * ========================= */
 
-#define VL53L0X_PERIOD_MS  100
+#define VL53L0X_PERIOD_MS  1000
 
 
 /* =========================

@@ -22,14 +22,33 @@
 static const char *TAG = "SENSOR";
 
 
+/* =========================
+ * QUEUE
+ * ========================= */
+
 static QueueHandle_t s_queue = NULL;
+
+
+/* =========================
+ * I2C BUS
+ * ========================= */
 
 static i2c_master_bus_handle_t s_bus = NULL;
 
 
+/* =========================
+ * SEND SENSOR DATA
+ * ========================= */
+
 static void send_data(
     const sensor_data_t *data)
 {
+    if (data == NULL)
+    {
+        return;
+    }
+
+
     if (xQueueSend(
             s_queue,
             data,
@@ -45,13 +64,20 @@ static void send_data(
 
 
 /* =========================
- * MMA845x
+ * MMA845x TASK
  * ========================= */
 
-static void mma845x_task(void *arg)
+static void mma845x_task(
+    void *arg)
 {
-    mma845x_handle_t sensor = {0};
+    mma845x_handle_t sensor = {
+        0
+    };
 
+
+    /*
+     * Init sensor
+     */
 
     esp_err_t err =
         mma845x_init(
@@ -69,6 +95,7 @@ static void mma845x_task(void *arg)
         );
 
         vTaskDelete(NULL);
+
         return;
     }
 
@@ -81,6 +108,11 @@ static void mma845x_task(void *arg)
 
     while (true)
     {
+        /*
+         * Nếu STOP
+         * thì không đọc sensor.
+         */
+
         if (!app_state_is_running())
         {
             vTaskDelay(
@@ -91,10 +123,14 @@ static void mma845x_task(void *arg)
         }
 
 
-        float x;
-        float y;
-        float z;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
 
+
+        /*
+         * Read MMA845x
+         */
 
         err =
             mma845x_read_accel(
@@ -108,6 +144,7 @@ static void mma845x_task(void *arg)
         if (err == ESP_OK)
         {
             sensor_data_t data = {
+
                 .type =
                     SENSOR_TYPE_MMA845X,
 
@@ -115,16 +152,38 @@ static void mma845x_task(void *arg)
                     esp_timer_get_time(),
 
                 .mma845x = {
+
                     .x_g = x,
+
                     .y_g = y,
+
                     .z_g = z
                 }
             };
 
 
+            /*
+             * Đẩy vào queue.
+             *
+             * MQTT task sẽ gom
+             * với VL53L0X.
+             */
+
             send_data(&data);
         }
+        else
+        {
+            ESP_LOGW(
+                TAG,
+                "MMA845x read failed: %s",
+                esp_err_to_name(err)
+            );
+        }
 
+
+        /*
+         * Sampling period
+         */
 
         vTaskDelay(
             pdMS_TO_TICKS(
@@ -136,15 +195,20 @@ static void mma845x_task(void *arg)
 
 
 /* =========================
- * VL53L0X
+ * VL53L0X TASK
  * ========================= */
 
-static void vl53l0x_task(void *arg)
+static void vl53l0x_task(
+    void *arg)
 {
     vl53l0x_sensor_handle_t sensor = {
         0
     };
 
+
+    /*
+     * Init sensor
+     */
 
     esp_err_t err =
         vl53l0x_sensor_init(
@@ -162,6 +226,7 @@ static void vl53l0x_task(void *arg)
         );
 
         vTaskDelete(NULL);
+
         return;
     }
 
@@ -174,6 +239,11 @@ static void vl53l0x_task(void *arg)
 
     while (true)
     {
+        /*
+         * Nếu STOP
+         * thì không đọc sensor.
+         */
+
         if (!app_state_is_running())
         {
             vTaskDelay(
@@ -185,9 +255,15 @@ static void vl53l0x_task(void *arg)
 
 
         uint16_t distance = 0;
+
         bool valid = false;
+
         uint8_t status = 0;
 
+
+        /*
+         * Read VL53L0X
+         */
 
         err =
             vl53l0x_sensor_read(
@@ -201,6 +277,7 @@ static void vl53l0x_task(void *arg)
         if (err == ESP_OK)
         {
             sensor_data_t data = {
+
                 .type =
                     SENSOR_TYPE_VL53L0X,
 
@@ -208,6 +285,7 @@ static void vl53l0x_task(void *arg)
                     esp_timer_get_time(),
 
                 .vl53l0x = {
+
                     .distance_mm =
                         distance,
 
@@ -220,9 +298,25 @@ static void vl53l0x_task(void *arg)
             };
 
 
+            /*
+             * Đẩy vào queue.
+             */
+
             send_data(&data);
         }
+        else
+        {
+            ESP_LOGW(
+                TAG,
+                "VL53L0X read failed: %s",
+                esp_err_to_name(err)
+            );
+        }
 
+
+        /*
+         * Sampling period
+         */
 
         vTaskDelay(
             pdMS_TO_TICKS(
@@ -234,12 +328,45 @@ static void vl53l0x_task(void *arg)
 
 
 /* =========================
- * MQTT TX
+ * MQTT TX TASK
+ *
+ * GOM 2 SENSOR
  * ========================= */
 
-static void mqtt_tx_task(void *arg)
+static void mqtt_tx_task(
+    void *arg)
 {
     sensor_data_t data;
+
+
+    /*
+     * Dữ liệu mới nhất
+     * của MMA845x.
+     */
+
+    sensor_data_t mma845x_data = {
+        0
+    };
+
+
+    /*
+     * Dữ liệu mới nhất
+     * của VL53L0X.
+     */
+
+    sensor_data_t vl53l0x_data = {
+        0
+    };
+
+
+    /*
+     * Flag kiểm tra
+     * đã nhận sensor chưa.
+     */
+
+    bool have_mma845x = false;
+
+    bool have_vl53l0x = false;
 
 
     ESP_LOGI(
@@ -250,19 +377,101 @@ static void mqtt_tx_task(void *arg)
 
     while (true)
     {
+        /*
+         * Chờ dữ liệu sensor.
+         */
+
         if (xQueueReceive(
                 s_queue,
                 &data,
                 portMAX_DELAY
-            ) == pdTRUE)
+            ) != pdTRUE)
         {
-            if (!app_state_is_running())
-                continue;
+            continue;
+        }
 
 
-            mqtt_publish_sensor_data(
-                &data
+        /*
+         * Nếu STOP:
+         *
+         * - Không publish.
+         * - Xóa dữ liệu cũ.
+         *
+         * Khi START lại,
+         * phải lấy lại cả 2 sensor.
+         */
+
+        if (!app_state_is_running())
+        {
+            have_mma845x = false;
+
+            have_vl53l0x = false;
+
+            continue;
+        }
+
+
+        /* =====================
+         * MMA845x
+         * ===================== */
+
+        if (data.type ==
+            SENSOR_TYPE_MMA845X)
+        {
+            /*
+             * Lưu giá trị mới nhất.
+             */
+
+            mma845x_data = data;
+
+            have_mma845x = true;
+        }
+
+
+        /* =====================
+         * VL53L0X
+         * ===================== */
+
+        else if (data.type ==
+                 SENSOR_TYPE_VL53L0X)
+        {
+            /*
+             * Lưu giá trị mới nhất.
+             */
+
+            vl53l0x_data = data;
+
+            have_vl53l0x = true;
+        }
+
+
+        /*
+         * ======================
+         * ĐỦ 2 SENSOR
+         * ======================
+         *
+         * Chỉ publish 1 MQTT.
+         */
+
+        if (have_mma845x &&
+            have_vl53l0x)
+        {
+            mqtt_publish_sensor_data_combined(
+                &mma845x_data,
+                &vl53l0x_data
             );
+
+
+            /*
+             * Reset.
+             *
+             * Chờ dữ liệu mới của
+             * cả 2 sensor.
+             */
+
+            have_mma845x = false;
+
+            have_vl53l0x = false;
         }
     }
 }
@@ -275,12 +484,22 @@ static void mqtt_tx_task(void *arg)
 esp_err_t sensor_manager_init(
     i2c_master_bus_handle_t bus)
 {
-    if (!bus)
+    /*
+     * Check I2C bus
+     */
+
+    if (bus == NULL)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
 
     s_bus = bus;
 
+
+    /*
+     * Create sensor queue
+     */
 
     s_queue = xQueueCreate(
         SENSOR_QUEUE_LENGTH,
@@ -288,9 +507,15 @@ esp_err_t sensor_manager_init(
     );
 
 
-    if (!s_queue)
+    if (s_queue == NULL)
+    {
         return ESP_ERR_NO_MEM;
+    }
 
+
+    /* =====================
+     * MMA845x TASK
+     * ===================== */
 
     if (xTaskCreate(
             mma845x_task,
@@ -301,9 +526,18 @@ esp_err_t sensor_manager_init(
             NULL
         ) != pdPASS)
     {
+        ESP_LOGE(
+            TAG,
+            "Failed to create MMA845x task"
+        );
+
         return ESP_FAIL;
     }
 
+
+    /* =====================
+     * VL53L0X TASK
+     * ===================== */
 
     if (xTaskCreate(
             vl53l0x_task,
@@ -314,9 +548,18 @@ esp_err_t sensor_manager_init(
             NULL
         ) != pdPASS)
     {
+        ESP_LOGE(
+            TAG,
+            "Failed to create VL53L0X task"
+        );
+
         return ESP_FAIL;
     }
 
+
+    /* =====================
+     * MQTT TX TASK
+     * ===================== */
 
     if (xTaskCreate(
             mqtt_tx_task,
@@ -327,8 +570,19 @@ esp_err_t sensor_manager_init(
             NULL
         ) != pdPASS)
     {
+        ESP_LOGE(
+            TAG,
+            "Failed to create MQTT TX task"
+        );
+
         return ESP_FAIL;
     }
+
+
+    ESP_LOGI(
+        TAG,
+        "Sensor manager ready"
+    );
 
 
     return ESP_OK;

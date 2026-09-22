@@ -20,18 +20,46 @@ typedef void (*mqtt_command_callback_t)(
 );
 
 
+/* =========================
+ * INIT
+ * ========================= */
+
 esp_err_t mqtt_manager_init(void);
+
+
+/* =========================
+ * CONNECTION
+ * ========================= */
+
+bool mqtt_manager_is_connected(void);
+
+
+/* =========================
+ * COMMAND
+ * ========================= */
 
 void mqtt_manager_set_command_callback(
     mqtt_command_callback_t callback
 );
 
-bool mqtt_manager_is_connected(void);
+
+/* =========================
+ * STATUS
+ * ========================= */
 
 void mqtt_publish_status(
     const char *status
 );
 
-void mqtt_publish_sensor_data(
-    const sensor_data_t *data
+
+/* =========================
+ * SENSOR DATA
+ *
+ * Gửi MMA845x + VL53L0X
+ * trong MỘT MQTT message.
+ * ========================= */
+
+void mqtt_publish_sensor_data_combined(
+    const sensor_data_t *mma845x,
+    const sensor_data_t *vl53l0x
 );
