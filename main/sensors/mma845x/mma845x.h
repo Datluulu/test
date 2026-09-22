@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 #include "esp_err.h"
 
 #include "driver/i2c_master.h"
@@ -20,10 +22,7 @@ esp_err_t mma845x_init(
 
 esp_err_t mma845x_read_accel(
     mma845x_handle_t *sensor,
-
     float *x_g,
-
     float *y_g,
-
     float *z_g
 );

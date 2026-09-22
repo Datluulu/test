@@ -1,29 +1,35 @@
 idf_component_register(
     SRCS
-        "app_main.c"
+        "main.c"
 
-        "wifi/wifi_manager.c"
+        "app/app_manager.c"
+        "app/app_state.c"
 
-        "mqtt/mqtt_manager.c"
+        "communication/wifi_manager.c"
+        "communication/mqtt_manager.c"
 
-        "sensors/mma845x.c"
-        "sensors/vl53l0x_sensor.c"
+        "control/control_task.c"
 
-        "tasks/control_task.c"
-        "tasks/sensor_tasks.c"
+        "sensors/sensor_manager.c"
+
+        "sensors/mma845x/mma845x.c"
+
+        "sensors/vl53l0x/vl53l0x_sensor.c"
 
     INCLUDE_DIRS
         "."
-        "wifi"
-        "mqtt"
+        "app"
+        "communication"
+        "control"
         "sensors"
-        "tasks"
+        "sensors/mma845x"
+        "sensors/vl53l0x"
 
     REQUIRES
         esp_wifi
         esp_event
         esp_netif
+        mqtt
         nvs_flash
-        esp_driver_i2c
-        esp_timer
+        driver
 )
